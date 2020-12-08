@@ -39,7 +39,7 @@ class PhysioNet2020Dataset(Dataset):
 
         self.dx_map_decode,self.dx_map_encode,self.y_encode, self.y_decode = self.get_mappings()
         
-        self.files_of_interest = []
+        self.recordings_index = []
             
         self.prepare_dataset()
         self.setup()
@@ -196,23 +196,7 @@ class PhysioNet2020Dataset(Dataset):
         labelDictTemplate = OrderedDict()
         for lbl in self.use_labels:
             labelDictTemplate[lbl]=0
-            
-        def orderedLabelDict():
-            d = OrderedDict()
-            for l in self.use_labels:
-                d[l]=0
-            return d
-        
-        def label_dict_to_array(d):
-            label_count = len(self.use_labels)
-            output_label_array = np.ones((label_count,))
-            i=0
-            for label in d:
-                output_label_array[i]=d[label]
-                i+=1
-
-            return output_label_array
-        
+                    
         for dset in self.use_datasets:
             dataset_dir = self.dataset_paths[dset]                        
             if os.path.isdir(dataset_dir):
@@ -248,8 +232,6 @@ class PhysioNet2020Dataset(Dataset):
                                             
                                             #print(output_label_array)
             
-
-        return files_of_interest  # [(header_file_path, output_label_array , dset)]
         
     def append_recordings(self,dset,filename,filepath,output_label_array):
         def load_recordings(header_file_path):
@@ -270,19 +252,24 @@ class PhysioNet2020Dataset(Dataset):
 
             return np.vstack(output_signals)
 
-        rec_name = "%s_%s"%(dset,filename)
+        rec_name = "%s_%s"%(dset,filename.replace('.hea', ''))
         
         #load, resample
         signals = load_recordings(filepath)
         resampled_signals = resample(signals,self.original_Fs[dset],Fs_out=self.Fs)
         #TODO - normalize & skip recordings with flat values
         #TODO - split resampled_signals
-        self.recordings.create_dataset(rec_name,data=resampled_signals)
+        if rec_name in self.recordings:
+            self.recordings[rec_name] = resampled_signals
+        else:
+            self.recordings.create_dataset(rec_name,data=resampled_signals)
         self.recordings[rec_name].attrs["labels"]=output_label_array
+
+        self.recordings_index.append(rec_name)
         
 
     def init_cache(self):
-        self.cache_file = h5py.File( os.path.join(self.datasets_dir, 'cache.hdf5'), 'a')
+        self.cache_file = h5py.File( os.path.join(self.datasets_dir, 'cache.hdf5'), 'w')
         if not "recordings" in self.cache_file:
             self.recordings = self.cache_file.create_group("recordings")        
         else:
@@ -294,7 +281,7 @@ class PhysioNet2020Dataset(Dataset):
 
         #TODO
         self.init_cache()
-        self.files_of_interest = self.generate_cache()
+        self.generate_cache()
           
        
         
@@ -306,13 +293,11 @@ class PhysioNet2020Dataset(Dataset):
         
     def setup(self):
         ##
-        pass
+        pass                        
         
-        
-        
-        
-    def __getitem__(self):
-        pass
+    def __getitem__(self,i):
+        recfile_name = self.recordings_index[i]        
+        return self.recordings[recfile_name][:],self.recordings[recfile_name].attrs["labels"][:]
         
     def __len__(self):
-        pass
+        return len(self.recordings_index)
