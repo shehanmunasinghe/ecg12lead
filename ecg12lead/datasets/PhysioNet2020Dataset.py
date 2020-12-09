@@ -15,6 +15,7 @@ import copy
 from collections import OrderedDict
 
 import h5py
+import pandas as pd
 
 def load_recordings(header_file_path):
     mat_file = header_file_path.replace('.hea', '.mat')
@@ -99,10 +100,10 @@ class PhysioNet2020Dataset(Dataset):
         self.dx_map_decode,self.dx_map_encode,self.y_encode, self.y_decode = self.get_mappings()
         
         self.recordings_index = []
+        self.meta_data_list = []
             
         self.prepare_dataset()
         self.setup()
-        
         
         
     def get_mappings(self):
@@ -303,14 +304,26 @@ class PhysioNet2020Dataset(Dataset):
             #normalize
             signals = normalize(split_signals[i])
 
-            #save in cache, recordings_index
-            rec_name = "%s_%s_%s"%(dset, filename.replace('.hea', '') ,(i))
+            #save in cache
+            filename = filename.replace('.hea', '')
+            rec_name = "%s_%s_%s"%(dset, filename ,(i))
             if rec_name in self.recordings:
                 self.recordings[rec_name] = signals
             else:
                 self.recordings.create_dataset(rec_name,data=signals)
             self.recordings[rec_name].attrs["labels"]=output_label_array
+            # update recordings_index
             self.recordings_index.append(rec_name)
+            # meta data
+            d = {
+                'dset':dset,
+                'filename':filename,
+                'split_no':i
+            }
+            for ylbl in range(len(output_label_array)):
+                d[self.y_decode[ylbl]] = output_label_array[ylbl]
+                # output_label_array[self.y_encode[c]]=1
+            self.meta_data_list.append(d)
         
 
     def init_cache(self):
@@ -328,16 +341,12 @@ class PhysioNet2020Dataset(Dataset):
         self.init_cache()
         self.generate_cache()
           
-       
-        
-        
-
-        
         pass
         
         
     def setup(self):
         ##
+        print('Setting up')
         pass                        
         
     def __getitem__(self,i):
@@ -346,3 +355,7 @@ class PhysioNet2020Dataset(Dataset):
         
     def __len__(self):
         return len(self.recordings_index)
+
+    def get_meta_data(self):
+        return pd.DataFrame(self.meta_data_list)
+
