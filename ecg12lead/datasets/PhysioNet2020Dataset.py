@@ -1,6 +1,7 @@
 import os
 import glob
 import random
+import math
 
 import numpy as np
 
@@ -15,6 +16,64 @@ from collections import OrderedDict
 
 import h5py
 
+def load_recordings(header_file_path):
+    mat_file = header_file_path.replace('.hea', '.mat')
+    x = loadmat(mat_file)
+    recording = np.asarray(x['val'], dtype=np.float32)
+    np.nan_to_num(recording,copy=False) ##Remove NaNs
+    return recording 
+
+def resample(input_signal, Fs_in, Fs_out):
+    # input_signal=[[],[],[],...] # 12xL
+    n_samples_in = input_signal.shape[1]
+    n_samples_out =  round(n_samples_in * Fs_out/Fs_in)
+
+    output_signals=[]
+    for i in range(12):
+        output_signals.append(signal.resample(input_signal[i], n_samples_out))
+
+    return np.vstack(output_signals)
+
+
+def get_splits(signals, n_samples_out):
+    neglect_f = 0.5
+    n_samples_in = signals.shape[1]
+    if n_samples_in==n_samples_out:
+        return [signals]
+    elif n_samples_in<n_samples_out:
+        #only one short split; padding with 0
+        if n_samples_in >= int(neglect_f*n_samples_out):
+            res = np.zeros((12,n_samples_out))
+            res[:,:n_samples_in] = signals
+            return [res]
+        else:
+            return []        
+    else:
+        #many splits
+        n_splits = math.ceil(n_samples_in/n_samples_out)
+        # print('n_splits',n_splits)
+        splits = []
+        for i in range(n_splits):
+            start_idx = i*n_samples_out
+            end_idx   = start_idx+n_samples_out
+            if end_idx <= n_samples_in:
+                splits.append(signals[:,start_idx:end_idx])
+            else:
+                # print('remaining')
+                if (n_samples_in - start_idx) >= int(neglect_f*n_samples_out):
+                    res = np.zeros((12,n_samples_out))
+                    res[:,:(n_samples_in - start_idx )] = signals[:,start_idx:n_samples_in]
+                    splits.append(res)            
+        return splits
+    
+def normalize(X):
+    Xmin=np.amin(X,keepdims=True,axis=1)
+    Xmax=np.amax(X,keepdims=True,axis=1)
+    # if(Xmin!=Xmax):
+        # return (X-Xmin)/(Xmax-Xmin)
+    # else:
+    #     return (X-Xmin)
+    return (X-Xmin)/(Xmax-Xmin+1e-8)
 
 class PhysioNet2020Dataset(Dataset):
     def __init__(self, datasets_dir,use_datasets,use_labels,Fs=400, N_samples=4096 ):
@@ -233,39 +292,25 @@ class PhysioNet2020Dataset(Dataset):
                                             #print(output_label_array)
             
         
-    def append_recordings(self,dset,filename,filepath,output_label_array):
-        def load_recordings(header_file_path):
-            mat_file = header_file_path.replace('.hea', '.mat')
-            x = loadmat(mat_file)
-            recording = np.asarray(x['val'], dtype=np.float32)
-            np.nan_to_num(recording,copy=False) ##Remove NaNs
-            return recording 
-
-        def resample(input_signal, Fs_in, Fs_out):
-            # input_signal=[[],[],[],...] # 12xL
-            n_samples_in = input_signal.shape[1]
-            n_samples_out =  round(n_samples_in * Fs_out/Fs_in)
-
-            output_signals=[]
-            for i in range(12):
-                output_signals.append(signal.resample(input_signal[i], n_samples_out))
-
-            return np.vstack(output_signals)
-
-        rec_name = "%s_%s"%(dset,filename.replace('.hea', ''))
+    def append_recordings(self,dset,filename,filepath,output_label_array):        
         
         #load, resample
-        signals = load_recordings(filepath)
-        resampled_signals = resample(signals,self.original_Fs[dset],Fs_out=self.Fs)
-        #TODO - normalize & skip recordings with flat values
-        #TODO - split resampled_signals
-        if rec_name in self.recordings:
-            self.recordings[rec_name] = resampled_signals
-        else:
-            self.recordings.create_dataset(rec_name,data=resampled_signals)
-        self.recordings[rec_name].attrs["labels"]=output_label_array
+        signals_ = load_recordings(filepath)
+        resampled_signals = resample(signals_,self.original_Fs[dset],Fs_out=self.Fs)
+        #split resampled_signals
+        split_signals = get_splits(resampled_signals, self.N_samples)        
+        for i in range(len(split_signals)):
+            #normalize
+            signals = normalize(split_signals[i])
 
-        self.recordings_index.append(rec_name)
+            #save in cache, recordings_index
+            rec_name = "%s_%s_%s"%(dset, filename.replace('.hea', '') ,(i))
+            if rec_name in self.recordings:
+                self.recordings[rec_name] = signals
+            else:
+                self.recordings.create_dataset(rec_name,data=signals)
+            self.recordings[rec_name].attrs["labels"]=output_label_array
+            self.recordings_index.append(rec_name)
         
 
     def init_cache(self):
