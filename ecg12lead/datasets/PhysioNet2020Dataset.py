@@ -5,7 +5,8 @@ import copy
 import numpy as np
 
 import torch
-from torch.utils.data import Dataset
+# from torch.utils.data import Dataset
+import torch.utils.data
 
 from scipy.io import loadmat
 from scipy import signal
@@ -100,7 +101,7 @@ def normalize(X):
     #     return (X-Xmin)
     return (X-Xmin)/(Xmax-Xmin+1e-8)
 
-class PhysioNet2020Dataset(Dataset):
+class BuildCache():
     def __init__(self, datasets_dir,Fs=400, N_samples=4096 ):
         
         self.datasets_dir = datasets_dir
@@ -123,46 +124,17 @@ class PhysioNet2020Dataset(Dataset):
         
         self.meta_data_list = [] #pd.DataFrame() # []
             
-        self.prepare_dataset()
-        self.setup()
-        
-    def setup(self,use_datasets=None,use_labels=None):
-        #TODO - implement this
-
-        if use_datasets:
-            self.use_datasets = sorted(use_datasets)
-        if use_labels:
-            self.use_labels   = sorted(use_labels)
+        self.cache_file = h5py.File( os.path.join(self.datasets_dir, 'cache.hdf5'), 'w')
+        if not "recordings" in self.cache_file:
+            self.recordings = self.cache_file.create_group("recordings")     
+            self._build_cache()
         else:
-            self.use_labels   = copy.copy(self.all_labels)
-
-
-        #YMap
-        y_encode={}
-        y_decode={}
+            self.recordings = self.cache_file["recordings"]
+            if not (self.recordings.attrs['Fs'] == self.Fs and self.recordings.attrs['N_samples'] ==self.N_samples ):
+                self._build_cache()        
         
-        i=0
-        for lbl in self.use_labels:
-            y_encode[lbl]=i
-            y_decode[i]=lbl
-            i=i+1
-
-        return y_encode, y_decode
-
-    # def setup_filtered_dataset(self,meta_df):
+        self.eject()        
         
-    #     self.recordings_of_interest = []
-
-    #     #
-    # def train_dataloader(self):
-    #     pass
-
-    # def val_dataloader(self):
-    #     pass
-
-    # def test_dataloader(self):
-    #     pass
-
         
     def _get_mappings(self):
         
@@ -298,7 +270,7 @@ class PhysioNet2020Dataset(Dataset):
         return dx_map_decode, dx_map_encode, sorted(all_labels)
         
         
-    def _generate_cache(self):
+    def _create_recordings_cache(self):
                             
         for dset,dataset_dir  in self.dataset_paths.items():
             if os.path.isdir(dataset_dir):
@@ -366,32 +338,75 @@ class PhysioNet2020Dataset(Dataset):
             self.meta_data_list.append(d_meta)
         
 
-    def init_cache(self):
-        self.cache_file = h5py.File( os.path.join(self.datasets_dir, 'cache.hdf5'), 'w')
-        if not "recordings" in self.cache_file:
-            self.recordings = self.cache_file.create_group("recordings")        
-        else:
-            self.recordings = self.cache_file["recordings"]
+    def _build_cache(self):
+        #store recordings
+        self._create_recordings_cache()
+        self.recordings.attrs['Fs']         = self.Fs
+        self.recordings.attrs['N_samples']  = self.N_samples
+        #store meta data
+        meta_data_df= self.get_meta_data()
+        meta_data_df.to_csv(os.path.join(self.datasets_dir, 'cache_meta.csv'),index=True)
 
-    def eject_cache(self):
+
+    def eject(self):
         self.cache_file.close()
-                
-    def prepare_dataset(self):
-
-        #TODO
-        self.init_cache()
-        self._generate_cache()
-          
-        pass    
-        
-    # def __getitem__(self,i):
-    #     recfile_name = self.recordings_index[i]        
-    #     return self.recordings[recfile_name][:],self.recordings[recfile_name].attrs["labels"][:]
-        
-    # def __len__(self):
-    #     return len(self.recordings_index)
-
+                        
     def get_meta_data(self):
         return pd.DataFrame(self.meta_data_list)
-        # return self.meta_data_list
 
+
+
+class Dataset(torch.utils.data.Dataset):
+    def __init__(self, datasets_dir, meta_data):
+        self.datasets_dir = datasets_dir
+        self.recfile_names = []
+
+        self.cache_file = h5py.File( os.path.join(self.datasets_dir, 'cache.hdf5'), 'r')        
+        self.recordings = self.cache_file["recordings"]
+
+
+
+        pass
+
+    def __getitem__(self,i):
+        recfile_name = self.recfile_names[i]        
+        recording = self.recordings[recfile_name][:],
+
+
+        return recording,label
+        
+    def __len__(self):
+        return len(self.recfile_names)
+
+    def setup(self,meta_data,):
+        #TODO - implement this
+
+        self.use_datasets = sorted(use_datasets)
+        self.use_labels   = sorted(use_labels)
+
+
+        #YMap
+        y_encode={}
+        y_decode={}
+        
+        i=0
+        for lbl in self.use_labels:
+            y_encode[lbl]=i
+            y_decode[i]=lbl
+            i=i+1
+
+        return y_encode, y_decode
+
+    # def setup_filtered_dataset(self,meta_df):
+        
+    #     self.recordings_of_interest = []
+
+    #     #
+    # def train_dataloader(self):
+    #     pass
+
+    # def val_dataloader(self):
+    #     pass
+
+    # def test_dataloader(self):
+    #     pass
