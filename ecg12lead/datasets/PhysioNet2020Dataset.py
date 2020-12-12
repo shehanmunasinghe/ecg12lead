@@ -125,14 +125,8 @@ class BuildCache():
         self.meta_data_list = [] #pd.DataFrame() # []
             
         self.cache_file = h5py.File( os.path.join(self.datasets_dir, 'cache.hdf5'), 'w')
-        if not "recordings" in self.cache_file:
-            self.recordings = self.cache_file.create_group("recordings")     
-            self._build_cache()
-        else:
-            self.recordings = self.cache_file["recordings"]
-            if not (self.recordings.attrs['Fs'] == self.Fs and self.recordings.attrs['N_samples'] ==self.N_samples ):
-                self._build_cache()        
-        
+        self.recordings = self.cache_file.create_group("recordings")     
+        self._build_cache()          
         self.eject()        
         
         
@@ -344,46 +338,63 @@ class BuildCache():
         self.recordings.attrs['Fs']         = self.Fs
         self.recordings.attrs['N_samples']  = self.N_samples
         #store meta data
-        meta_data_df= self.get_meta_data()
-        meta_data_df.to_csv(os.path.join(self.datasets_dir, 'cache_meta.csv'),index=True)
+        meta_data_df= self.get_metadata()
+        meta_data_df.to_csv(os.path.join(self.datasets_dir, 'cache_meta.csv'),index=False)
 
 
     def eject(self):
         self.cache_file.close()
                         
-    def get_meta_data(self):
+    def get_metadata(self):
         return pd.DataFrame(self.meta_data_list)
 
 
+class LoadCache():
+    def __init__(self, datasets_dir):
+        
+        self.datasets_dir = datasets_dir
+                    
+        self.cache_file = h5py.File( os.path.join(self.datasets_dir, 'cache.hdf5'), 'r')
+        self.recordings = self.cache_file["recordings"]
+
+    def get_metadata(self):
+        return pd.read_csv(os.path.join(self.datasets_dir, 'cache_meta.csv'))
+            
+    def eject(self):
+        self.cache_file.close()
+
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, datasets_dir, meta_data):
+    def __init__(self, datasets_dir, metadata=None):
         self.datasets_dir = datasets_dir
-        self.recfile_names = []
 
         self.cache_file = h5py.File( os.path.join(self.datasets_dir, 'cache.hdf5'), 'r')        
         self.recordings = self.cache_file["recordings"]
 
+        self.recfile_names=[]
+        self.labels = []
 
+        if not metadata is None:
+            self.setup_from_metadata(metadata)
 
         pass
 
     def __getitem__(self,i):
         recfile_name = self.recfile_names[i]        
-        recording = self.recordings[recfile_name][:],
+        recording = self.recordings[recfile_name][:]
 
+        label = self.labels[i]
 
         return recording,label
         
     def __len__(self):
         return len(self.recfile_names)
 
-    def setup(self,meta_data,):
-        #TODO - implement this
 
-        self.use_datasets = sorted(use_datasets)
-        self.use_labels   = sorted(use_labels)
-
+    def setup_from_metadata(self,metadata):
+        
+        self.use_labels   = sorted(list(metadata.keys())[3:])
+        print("Using labels:",self.use_labels)
 
         #YMap
         y_encode={}
@@ -395,11 +406,32 @@ class Dataset(torch.utils.data.Dataset):
             y_decode[i]=lbl
             i=i+1
 
-        return y_encode, y_decode
+        # return y_encode, y_decode
+        self.y_encode, self.y_decode = y_encode, y_decode
 
-    # def setup_filtered_dataset(self,meta_df):
-        
-    #     self.recordings_of_interest = []
+        recfile_names=[]
+        labels=[]
+
+        for _, rec in metadata.iterrows():
+            dataset     = rec['_dataset']
+            filename    = rec['_filename']
+            i           = rec['_split_no']
+            rec_name = "%s_%s_%s"%(dataset, filename ,(i))        
+
+            output_label_array = np.zeros((len(self.use_labels),)) 
+            for c in self.use_labels:
+                if   rec[c] ==1: 
+                    output_label_array[self.y_encode[c]]=1  
+            
+            recfile_names.append(rec_name)
+            labels.append(output_label_array)
+
+
+        self.recfile_names,self.labels = recfile_names,labels
+
+    def eject(self):
+        self.cache_file.close()
+
 
     #     #
     # def train_dataloader(self):
