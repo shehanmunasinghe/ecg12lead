@@ -1,7 +1,6 @@
 import os
-import glob
-import random
 import math
+import copy
 
 import numpy as np
 
@@ -11,11 +10,36 @@ from torch.utils.data import Dataset
 from scipy.io import loadmat
 from scipy import signal
 
-import copy
-from collections import OrderedDict
-
 import h5py
 import pandas as pd
+
+import random
+import sklearn.model_selection 
+
+def train_val_test_split(A, split=(0.7,0.2,0.1),seed = 12345678):
+    '''list or numpy array. Pandas dataframes not supported'''
+    A = sorted(A)
+    rnd = random.Random(seed)
+    rnd.shuffle(A)
+
+    assert abs(sum(split) - 1.0)<=0.01 , "Invaid train-val-test split"
+
+    split_1 = int(split[0] * len(A))
+    split_2 = int((split[0]+split[1]) * len(A))
+
+    A_train = A[:split_1]
+    A_dev   = A[split_1:split_2]
+    A_test  = A[split_2:]
+
+    return A_train, A_dev, A_test
+
+def train_val_split(A, split=(0.7,0.3),seed = 12345678):
+    '''Split Pandas DF or list or numpy array'''
+    assert abs(sum(split) - 1.0)<=0.01 , "Invaid train-val split"
+
+    test_size = split[1]
+    return sklearn.model_selection.train_test_split(A, test_size=test_size, random_state =seed)    
+
 
 def load_recordings(header_file_path):
     mat_file = header_file_path.replace('.hea', '.mat')
@@ -77,11 +101,9 @@ def normalize(X):
     return (X-Xmin)/(Xmax-Xmin+1e-8)
 
 class PhysioNet2020Dataset(Dataset):
-    def __init__(self, datasets_dir,use_datasets,use_labels,Fs=400, N_samples=4096 ):
+    def __init__(self, datasets_dir,Fs=400, N_samples=4096 ):
         
         self.datasets_dir = datasets_dir
-        self.use_datasets = sorted(use_datasets)
-        self.use_labels   = sorted(use_labels)
         self.Fs = Fs
         self.N_samples = N_samples
         
@@ -97,16 +119,52 @@ class PhysioNet2020Dataset(Dataset):
             'Georgia': os.path.join(self.datasets_dir,'Georgia')
         }
 
-        self.dx_map_decode,self.dx_map_encode,self.y_encode, self.y_decode = self.get_mappings()
+        self.dx_map_decode,self.dx_map_encode,self.all_labels = self._get_mappings()
         
-        self.recordings_index = []
-        self.meta_data_list = []
+        self.meta_data_list = [] #pd.DataFrame() # []
             
         self.prepare_dataset()
         self.setup()
         
+    def setup(self,use_datasets=None,use_labels=None):
+        #TODO - implement this
+
+        if use_datasets:
+            self.use_datasets = sorted(use_datasets)
+        if use_labels:
+            self.use_labels   = sorted(use_labels)
+        else:
+            self.use_labels   = copy.copy(self.all_labels)
+
+
+        #YMap
+        y_encode={}
+        y_decode={}
         
-    def get_mappings(self):
+        i=0
+        for lbl in self.use_labels:
+            y_encode[lbl]=i
+            y_decode[i]=lbl
+            i=i+1
+
+        return y_encode, y_decode
+
+    # def setup_filtered_dataset(self,meta_df):
+        
+    #     self.recordings_of_interest = []
+
+    #     #
+    # def train_dataloader(self):
+    #     pass
+
+    # def val_dataloader(self):
+    #     pass
+
+    # def test_dataloader(self):
+    #     pass
+
+        
+    def _get_mappings(self):
         
         #DxMap
         csv_content = """
@@ -230,35 +288,19 @@ class PhysioNet2020Dataset(Dataset):
 
         dx_map_decode ={}
         dx_map_encode ={}
+        all_labels=[]
         for row in rows:
             description, code, abbr= row.strip().split(",")
             dx_map_decode[code] = (abbr,description)
             dx_map_encode[abbr] = code
+            all_labels.append(abbr)
             
-        #YMap
-        y_encode={}
-        y_decode={}
-        
-        i=0
-        for lbl in self.use_labels:
-            y_encode[lbl]=i
-            y_decode[i]=lbl
-            i=i+1
-
-        return dx_map_decode,dx_map_encode,y_encode, y_decode
+        return dx_map_decode, dx_map_encode, sorted(all_labels)
         
         
-    def generate_cache(self):
-        #Make list of all header files
-        all_header_files = []         # [(header_file_path, dset)]
-        files_of_interest =[]    # [(header_file_path, output_label_array , dset)]
-
-        labelDictTemplate = OrderedDict()
-        for lbl in self.use_labels:
-            labelDictTemplate[lbl]=0
-                    
-        for dset in self.use_datasets:
-            dataset_dir = self.dataset_paths[dset]                        
+    def _generate_cache(self):
+                            
+        for dset,dataset_dir  in self.dataset_paths.items():
             if os.path.isdir(dataset_dir):
                 print("Indexing Dataset: ", dset)
                 lsdir = os.listdir(dataset_dir)
@@ -274,26 +316,26 @@ class PhysioNet2020Dataset(Dataset):
                                     tmp = l.split(': ')[1].split(',')
                                     #print(tmp)
                                     if tmp:
-                                        #d = orderedLabelDict()
-                                        output_label_array = np.zeros((len(self.use_labels),))                                        
-                                        found_interesting_label = False
+                                        # output_label_array = np.zeros((len(self.use_labels),))                                        
+                                        # found_interesting_label = False
+                                        found_labels=[]
                                         for c in tmp:
                                             c = c.strip()
                                             c = self.dx_map_decode[c][0]
-                                            if c in self.use_labels:                            
-                                                #d[c]=1
-                                                output_label_array[self.y_encode[c]]=1
-                                                found_interesting_label=True
+                                            # if c in self.use_labels:
+                                            #     output_label_array[self.y_encode[c]]=1
+                                            #     found_interesting_label=True
+                                            # output_label_array[self.y_encode[c]]=1
+                                            # found_interesting_label=True
+                                            if c in self.all_labels:
+                                                found_labels.append(c)
 
-                                        if found_interesting_label:
-                                            #output_label_array = label_dict_to_array(d)
-                                            files_of_interest.append((filepath,output_label_array , dset))
-                                            self.append_recordings(dset,filename,filepath,output_label_array)
+                                        # if found_interesting_label:
+                                        if found_labels:
+                                            self._append_recordings(dset,filename,filepath,found_labels)
                                             
-                                            #print(output_label_array)
-            
-        
-    def append_recordings(self,dset,filename,filepath,output_label_array):        
+                    
+    def _append_recordings(self,dset,filename,filepath,found_labels):        
         
         #load, resample
         signals_ = load_recordings(filepath)
@@ -311,19 +353,17 @@ class PhysioNet2020Dataset(Dataset):
                 self.recordings[rec_name] = signals
             else:
                 self.recordings.create_dataset(rec_name,data=signals)
-            self.recordings[rec_name].attrs["labels"]=output_label_array
-            # update recordings_index
-            self.recordings_index.append(rec_name)
+            # self.recordings[rec_name].attrs["labels"]=output_label_array
+
             # meta data
-            d = {
-                'dset':dset,
-                'filename':filename,
-                'split_no':i
+            d_meta = {
+                '_dataset':dset,
+                '_filename':filename,
+                '_split_no':i
             }
-            for ylbl in range(len(output_label_array)):
-                d[self.y_decode[ylbl]] = output_label_array[ylbl]
-                # output_label_array[self.y_encode[c]]=1
-            self.meta_data_list.append(d)
+            for lbl in self.all_labels:
+                d_meta[lbl] = int(lbl in found_labels)
+            self.meta_data_list.append(d_meta)
         
 
     def init_cache(self):
@@ -332,6 +372,7 @@ class PhysioNet2020Dataset(Dataset):
             self.recordings = self.cache_file.create_group("recordings")        
         else:
             self.recordings = self.cache_file["recordings"]
+
     def eject_cache(self):
         self.cache_file.close()
                 
@@ -339,23 +380,18 @@ class PhysioNet2020Dataset(Dataset):
 
         #TODO
         self.init_cache()
-        self.generate_cache()
+        self._generate_cache()
           
-        pass
+        pass    
         
+    # def __getitem__(self,i):
+    #     recfile_name = self.recordings_index[i]        
+    #     return self.recordings[recfile_name][:],self.recordings[recfile_name].attrs["labels"][:]
         
-    def setup(self):
-        ##
-        print('Setting up')
-        pass                        
-        
-    def __getitem__(self,i):
-        recfile_name = self.recordings_index[i]        
-        return self.recordings[recfile_name][:],self.recordings[recfile_name].attrs["labels"][:]
-        
-    def __len__(self):
-        return len(self.recordings_index)
+    # def __len__(self):
+    #     return len(self.recordings_index)
 
     def get_meta_data(self):
         return pd.DataFrame(self.meta_data_list)
+        # return self.meta_data_list
 
