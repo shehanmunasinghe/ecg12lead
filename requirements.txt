@@ -4,3 +4,5 @@ h5py >= 2.10.0
 PyWavelets >= 1.1.1
 skimage >= 0.16.2
 pandas >= 1.1.4
+scikit-learn >= 0.22
+ipywidgets >= 5.0.0

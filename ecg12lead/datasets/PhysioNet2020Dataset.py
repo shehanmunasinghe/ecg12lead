@@ -374,6 +374,8 @@ class Dataset(torch.utils.data.Dataset):
         self.recfile_names=[]
         self.labels = []
 
+        self.metadata = metadata
+
         if not metadata is None:
             self.setup_from_metadata(metadata)
 
