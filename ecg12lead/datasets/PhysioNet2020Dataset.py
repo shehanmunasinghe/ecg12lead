@@ -408,11 +408,21 @@ class Dataset(torch.utils.data.Dataset):
             y_decode[i]=lbl
             i=i+1
 
-        # return y_encode, y_decode
         self.y_encode, self.y_decode = y_encode, y_decode
 
-        recfile_names=[]
-        labels=[]
+        # WeightedRandomSampler setup
+        count_dict = metadata[self.use_labels].sum().to_dict()
+        class_weights =  np.zeros((len(self.use_labels),))
+        # class_frequencies =  np.zeros((len(self.use_labels),))
+        for i in range(len(self.use_labels)):
+            class_weights[i] = (1/count_dict[self.use_labels[i]])
+            # class_frequencies[i] = count_dict[self.use_labels[i]]
+
+        # Recfile names and labels
+        recfile_names   = []
+        labels          = []
+        sampler_weights = []
+        # sampler_frequencies = []
 
         for _, rec in metadata.iterrows():
             dataset     = rec['_dataset']
@@ -427,9 +437,16 @@ class Dataset(torch.utils.data.Dataset):
             
             recfile_names.append(rec_name)
             labels.append(output_label_array)
+            sampler_weights.append(np.max(output_label_array * class_weights))
+            # sampler_frequencies.append(np.min(output_label_array * class_frequencies))
 
+        self.recfile_names      = recfile_names
+        self.labels             = labels
+        self.sampler_weights    = sampler_weights #1/sampler_frequencies #sampler_weights
 
-        self.recfile_names,self.labels = recfile_names,labels
+    def get_wr_sampler(self):
+        sampler = torch.utils.data.WeightedRandomSampler(weights=self.sampler_weights, num_samples=len(self.sampler_weights), replacement=True,generator=None)
+        return sampler
 
     def eject(self):
         self.cache_file.close()
