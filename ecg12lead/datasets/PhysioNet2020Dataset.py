@@ -17,30 +17,9 @@ import pandas as pd
 import random
 import sklearn.model_selection 
 
-def train_val_test_split(A, split=(0.7,0.2,0.1),seed = 12345678):
-    '''list or numpy array. Pandas dataframes not supported'''
-    A = sorted(A)
-    rnd = random.Random(seed)
-    rnd.shuffle(A)
-
-    assert abs(sum(split) - 1.0)<=0.01 , "Invaid train-val-test split"
-
-    split_1 = int(split[0] * len(A))
-    split_2 = int((split[0]+split[1]) * len(A))
-
-    A_train = A[:split_1]
-    A_dev   = A[split_1:split_2]
-    A_test  = A[split_2:]
-
-    return A_train, A_dev, A_test
-
-def train_val_split(A, split=(0.7,0.3),seed = 12345678):
-    '''Split Pandas DF or list or numpy array'''
-    assert abs(sum(split) - 1.0)<=0.01 , "Invaid train-val split"
-
-    test_size = split[1]
-    return sklearn.model_selection.train_test_split(A, test_size=test_size, random_state =seed)    
-
+'''
+     Build & Load Cache
+'''
 
 def load_recordings(header_file_path):
     mat_file = header_file_path.replace('.hea', '.mat')
@@ -364,6 +343,10 @@ class LoadCache():
         self.cache_file.close()
 
 
+'''
+    Dataset
+'''
+
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, datasets_dir, metadata=None, tensor_out=False):
         self.datasets_dir = datasets_dir
@@ -467,3 +450,56 @@ class Dataset(torch.utils.data.Dataset):
 
     # def test_dataloader(self):
     #     pass
+
+
+'''
+    Meta Data
+'''
+
+def train_val_test_split(A, split=(0.7,0.2,0.1),seed = 12345678):
+    '''list or numpy array. Pandas dataframes not supported'''
+    A = sorted(A)
+    rnd = random.Random(seed)
+    rnd.shuffle(A)
+
+    assert abs(sum(split) - 1.0)<=0.01 , "Invaid train-val-test split"
+
+    split_1 = int(split[0] * len(A))
+    split_2 = int((split[0]+split[1]) * len(A))
+
+    A_train = A[:split_1]
+    A_dev   = A[split_1:split_2]
+    A_test  = A[split_2:]
+
+    return A_train, A_dev, A_test
+
+def train_val_split(A, split=(0.7,0.3),seed = 12345678):
+    '''Split Pandas DF or list or numpy array'''
+    assert abs(sum(split) - 1.0)<=0.01 , "Invaid train-val split"
+
+    test_size = split[1]
+    return sklearn.model_selection.train_test_split(A, test_size=test_size, random_state =seed)    
+
+
+def filter_metadata(metadata,use_labels=None,use_datasets=None, get_count=False):       
+
+    if use_datasets:
+        use_datasets = sorted(use_datasets)
+        # use_datasets = ['CPSC', 'CPSC-Extra','StPetersburg', 'PTB', 'PTB-XL', 'Georgia']
+        metadata = metadata.query("_dataset == @use_datasets")
+
+    if use_labels:
+
+        use_labels   = sorted(use_labels)
+        metadata = metadata[
+            ['_dataset','_filename','_split_no']+use_labels
+        ]
+
+        query_str = '|'.join(["%s !=0 "%lbl for lbl in use_labels])
+        metadata = metadata.query(query_str)        
+
+    if get_count:
+        count = metadata[use_labels].sum().to_dict()
+        return metadata, count
+
+    return metadata
