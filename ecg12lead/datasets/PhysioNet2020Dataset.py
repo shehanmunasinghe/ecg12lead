@@ -365,7 +365,7 @@ class LoadCache():
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, datasets_dir, metadata=None):
+    def __init__(self, datasets_dir, metadata=None, tensor_out=False):
         self.datasets_dir = datasets_dir
 
         self.cache_file = h5py.File( os.path.join(self.datasets_dir, 'cache.hdf5'), 'r')        
@@ -379,6 +379,8 @@ class Dataset(torch.utils.data.Dataset):
         if not metadata is None:
             self.setup_from_metadata(metadata)
 
+        self.tensor_out = tensor_out
+
         pass
 
     def __getitem__(self,i):
@@ -386,6 +388,10 @@ class Dataset(torch.utils.data.Dataset):
         recording = self.recordings[recfile_name][:]
 
         label = self.labels[i]
+
+        if self.tensor_out:
+            recording = torch.from_numpy(recording)
+            label = torch.from_numpy(label)
 
         return recording,label
         
