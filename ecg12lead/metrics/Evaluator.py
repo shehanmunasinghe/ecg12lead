@@ -36,7 +36,7 @@ class Evaluator(object):
                     self._plot_single_confusion_matrix(cm = self.A[fig_no], axes = axes[i][j],
                                 normalize    = False,
                                 target_names = ['positive', 'negative'],
-                                title        = "%s - %s"%(self.y_decode(fig_no))
+                                title        = "%s"%(self.y_decode[fig_no])
                                 )
                     fig_no+=1
                 else:

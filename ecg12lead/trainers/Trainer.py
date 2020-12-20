@@ -3,7 +3,7 @@ import os
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-import datetime
+from datetime import datetime
 from tqdm.auto import tqdm
 
 class Trainer():
