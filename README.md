@@ -32,9 +32,9 @@ This project is setup as a package which means any file can be imported into any
 
 ### When using Colab
 
-    DATASET_DIR = '/content/Data'
-    !mkdir "{DATASET_DIR}"
-    !cd "{DATASET_DIR}"
+    DATASETS_DIR = '/content/Data'
+    !mkdir "{DATASETS_DIR}"
+    !cd "{DATASETS_DIR}"
 
     # Authentication
     from google.colab import auth
