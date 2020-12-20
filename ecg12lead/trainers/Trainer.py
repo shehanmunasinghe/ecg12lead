@@ -45,7 +45,7 @@ class Trainer():
         self.model_checkpoint_dir = model_checkpoint_dir
 
         #tqdm
-        self.use_tqdm
+        self.use_tqdm = use_tqdm
 
 
     def run(self,total_epochs,cpt_interval=5):
